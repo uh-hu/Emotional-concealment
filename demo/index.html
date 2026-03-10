@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语义——韵律分析</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="background-animation">
+        <div class="blob shape-1"></div>
+        <div class="blob shape-2"></div>
+        <div class="blob shape-3"></div>
+        <div class="grid-overlay"></div>
+    </div>
+    
+    <div class="app-container">
+        <header class="app-header">
+            <div class="badge">AI 分析引擎</div>
+            <h1 class="main-title">语义——韵律分析</h1>
+            <p class="subtitle">深度多模态情感计算与认知解析平台</p>
+        </header>
+
+        <main class="main-content glass-card" id="mainCard">
+            <!-- Upload / Input Section -->
+            <section class="panel active" id="inputPanel">
+                <div class="upload-area" id="uploadArea">
+                    <div class="mic-container">
+                        <button class="mic-button" id="micBtn" aria-label="录音">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <div class="mic-waves">
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="upload-title">点击开始录制语音</h3>
+                    <p class="upload-desc">或者将音频文件拖拽到此区域</p>
+                    
+                    <div class="divider"><span>OR</span></div>
+                    
+                    <input type="file" id="fileInput" accept="audio/*, video/*" hidden>
+                    <label for="fileInput" class="btn btn-outline">
+                        <i class="fas fa-folder-open"></i> 浏览本地文件
+                    </label>
+                </div>
+
+                <div class="file-status hidden" id="fileStatus">
+                    <div class="file-info">
+                        <i class="fas fa-file-audio file-icon"></i>
+                        <div class="file-details">
+                            <span class="file-name" id="fileName">音频文件.wav</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-icon" id="removeFileBtn" title="删除"><i class="fas fa-times"></i></button>
+                </div>
+
+                <div class="action-footer">
+                    <button class="btn btn-primary btn-large" id="submitBtn" disabled>
+                        开始深度分析 <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading Section -->
+            <section class="panel hidden" id="loadingPanel" style="display: none;">
+                <div class="loading-container">
+                    <div class="spinner">
+                        <svg viewBox="0 0 50 50">
+                            <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+                        </svg>
+                    </div>
+                    <h3 class="loading-title">正在处理音频信号...</h3>
+                    <p class="loading-desc" id="loadingText">提取声学特征 (Prosody Extraction)</p>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Result Section -->
+            <section class="panel hidden" id="resultPanel" style="display: none;">
+                <div class="result-header">
+                    <h2>分析总结报告</h2>
+                    <span class="status-badge critical"><i class="fas fa-exclamation-triangle"></i> 高风险发现</span>
+                </div>
+                
+                <div class="insight-card">
+                    <p class="insight-text">
+                        系统检测到目标的 <strong>语义表达</strong> 与 <strong>韵律特征</strong> 之间存在 <span class="highlight">巨大偏移</span>。这通常表现在传递正面字面意义时，伴随了负向或紧张的声学韵律特征（如音调突变、持续颤动等）。<br>
+                        <em>结论支持：极高概率存在隐瞒真实情感或认知失调的状况。</em>
+                    </p>
+                </div>
+
+                <div class="data-visualization">
+                    <div class="image-wrapper">
+                        <div class="scan-line"></div>
+                        <img src="assets/result.png" alt="语义与韵律偏移可视化" class="result-image">
+                    </div>
+                </div>
+
+                <div class="action-footer result-footer">
+                    <button class="btn btn-outline" id="resetBtn">
+                        <i class="fas fa-redo"></i> 重新分析其他样本
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
