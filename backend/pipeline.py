@@ -24,15 +24,17 @@ class Prosody2VecPipeline:
 
     Parameters
     ----------
+    pretrained_dir : str, optional
+        SpeechBrain 预训练模型的本地目录。
     checkpoint_path : str, optional
-        训练好的编码器权重路径（.pt 文件）。
-        如果为 None，使用随机初始化模型（仅测试用）。
+        自训练的编码器权重路径（.pt 文件）。
     device : str, optional
         计算设备。None 则自动选择。
     """
 
     def __init__(
         self,
+        pretrained_dir: str = None,
         checkpoint_path: str = None,
         device: str = None,
     ):
@@ -46,6 +48,7 @@ class Prosody2VecPipeline:
 
         print("[Pipeline] Initializing prosody encoder...")
         self.encoder = ProsodyEncoder(
+            pretrained_dir=pretrained_dir,
             checkpoint_path=checkpoint_path,
             device=self.device,
         )
@@ -114,6 +117,8 @@ def main():
         description="Prosody2Vec Pipeline: Audio -> 192-dim Prosody Vector"
     )
     parser.add_argument("--audio", required=True, help="Audio file path")
+    parser.add_argument("--pretrained_dir", default=None,
+                        help="SpeechBrain pretrained model directory")
     parser.add_argument("--checkpoint", default=None, help="Encoder checkpoint (.pt)")
     parser.add_argument("--device", default=None, help="Device (cuda/cpu)")
     parser.add_argument("--output", default=None, help="Save vector to .npy file")
@@ -122,6 +127,7 @@ def main():
     args = parser.parse_args()
 
     pipeline = Prosody2VecPipeline(
+        pretrained_dir=args.pretrained_dir,
         checkpoint_path=args.checkpoint,
         device=args.device,
     )

@@ -272,11 +272,19 @@ class ECAPA_TDNN(nn.Module):
 class ProsodyEncoder:
     """韵律编码器 — 封装 ECAPA-TDNN 推理接口。
 
+    支持三种加载模式:
+        1. SpeechBrain 预训练模型（从本地目录加载，避免 huggingface_hub 兼容问题）
+        2. 自训练的 .pt checkpoint
+        3. 随机初始化（仅测试用）
+
     Parameters
     ----------
+    pretrained_dir : str, optional
+        SpeechBrain 预训练模型的本地目录路径。
+        目录下需要包含从 HuggingFace 手动下载的模型文件:
+        hyperparams.yaml, embedding_model.ckpt, 等。
     checkpoint_path : str, optional
-        训练好的模型权重路径（.pt 文件）。
-        如果为 None，则使用随机初始化的模型（未训练）。
+        自训练的模型权重路径（.pt 文件）。
     device : str, optional
         计算设备。None 则自动选择。
     embedding_dim : int
@@ -285,41 +293,96 @@ class ProsodyEncoder:
 
     def __init__(
         self,
+        pretrained_dir: str = None,
         checkpoint_path: str = None,
         device: str = None,
         embedding_dim: int = 192,
     ):
         self.embedding_dim = embedding_dim
+        self._use_speechbrain = False
 
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
 
-        # 构建模型
-        self.model = ECAPA_TDNN(
-            in_channels=80,
-            channels=1024,
-            embedding_dim=embedding_dim,
-        ).to(self.device)
+        # ─── 模式 1: SpeechBrain 预训练模型（本地加载）───
+        if pretrained_dir is not None:
+            self._load_speechbrain(pretrained_dir)
 
-        # 加载权重
-        if checkpoint_path is not None:
-            state_dict = torch.load(checkpoint_path, map_location=self.device)
-            # 兼容包含 "model." 前缀的 checkpoint
-            if any(k.startswith("model.") for k in state_dict.keys()):
-                state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
-            self.model.load_state_dict(state_dict)
-            print(f"[ProsodyEncoder] 已加载权重: {checkpoint_path}")
+        # ─── 模式 2: 自训练 .pt checkpoint ───
+        elif checkpoint_path is not None:
+            self._load_custom_checkpoint(checkpoint_path)
+
+        # ─── 模式 3: 随机初始化 ───
         else:
+            self.model = ECAPA_TDNN(
+                in_channels=80, channels=1024, embedding_dim=embedding_dim,
+            ).to(self.device)
+            self.model.eval()
             print("[ProsodyEncoder] 注意: 使用随机初始化模型（未训练）")
 
-        self.model.eval()
         print(f"[ProsodyEncoder] 设备: {self.device} | 嵌入维度: {self.embedding_dim}")
 
-        # 打印模型参数量
-        n_params = sum(p.numel() for p in self.model.parameters())
-        print(f"[ProsodyEncoder] 模型参数量: {n_params:,} ({n_params / 1e6:.1f}M)")
+    def _load_speechbrain(self, pretrained_dir: str):
+        """从本地目录加载 SpeechBrain 预训练 ECAPA-TDNN。
+
+        直接使用 SpeechBrain 的 ECAPA_TDNN 模型类 + torch.load，
+        完全绕过 from_hparams / hf_hub_download。
+        """
+        from pathlib import Path
+        try:
+            from speechbrain.lobes.models.ECAPA_TDNN import ECAPA_TDNN as SB_ECAPA_TDNN
+        except ImportError:
+            raise ImportError(
+                "需要安装 speechbrain: pip install speechbrain\n"
+                "注意: 这里直接使用模型类加载，不会触发 huggingface_hub 下载。"
+            )
+
+        ckpt_path = Path(pretrained_dir) / "embedding_model.ckpt"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"未找到模型文件: {ckpt_path}\n"
+                f"请从 HuggingFace 下载 embedding_model.ckpt 到 {pretrained_dir}/"
+            )
+
+        print(f"[ProsodyEncoder] 从本地加载 SpeechBrain 模型: {pretrained_dir}")
+
+        # 使用与 speechbrain/spkrec-ecapa-voxceleb 相同的配置
+        self.sb_model = SB_ECAPA_TDNN(
+            input_size=80,
+            channels=[1024, 1024, 1024, 1024, 3072],
+            kernel_sizes=[5, 3, 3, 3, 1],
+            dilations=[1, 2, 3, 4, 1],
+            attention_channels=128,
+            lin_neurons=192,
+        )
+
+        # 直接加载权重（绕过 from_hparams）
+        ckpt = torch.load(str(ckpt_path), map_location=self.device)
+        self.sb_model.load_state_dict(ckpt)
+        self.sb_model.to(self.device)
+        self.sb_model.eval()
+
+        self._use_speechbrain = True
+        n_params = sum(p.numel() for p in self.sb_model.parameters())
+        print(f"[ProsodyEncoder] SpeechBrain ECAPA-TDNN 加载成功 ✓ ({n_params:,} params)")
+
+    def _load_custom_checkpoint(self, checkpoint_path: str):
+        """加载自训练的 .pt checkpoint。"""
+        self.model = ECAPA_TDNN(
+            in_channels=80, channels=1024, embedding_dim=self.embedding_dim,
+        ).to(self.device)
+
+        state_dict = torch.load(checkpoint_path, map_location=self.device)
+        # 兼容 DDP 保存的 "module." 前缀
+        cleaned = {}
+        for k, v in state_dict.items():
+            k = k.replace("module.", "").replace("model.", "")
+            cleaned[k] = v
+        self.model.load_state_dict(cleaned)
+        self.model.eval()
+        print(f"[ProsodyEncoder] 已加载自训练权重: {checkpoint_path}")
 
     @torch.no_grad()
     def encode(self, mel: torch.Tensor) -> torch.Tensor:
@@ -339,7 +402,18 @@ class ProsodyEncoder:
             mel = mel.unsqueeze(0)
 
         mel = mel.to(self.device)
-        embedding = self.model(mel)
+
+        if self._use_speechbrain:
+            # SpeechBrain 的 ECAPA_TDNN 接受 [B, T, C] 格式
+            # 我们的梅尔频谱图是 [B, C, T]，需要转置
+            mel_btc = mel.transpose(1, 2)  # [B, 80, T] → [B, T, 80]
+            embedding = self.sb_model(mel_btc)
+            # SpeechBrain 输出可能是 [B, 1, 192]
+            if embedding.dim() == 3:
+                embedding = embedding.squeeze(1)
+        else:
+            embedding = self.model(mel)
+
         return embedding
 
     def get_embedding_dim(self) -> int:
@@ -355,7 +429,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="ECAPA-TDNN Prosody Encoder")
     parser.add_argument("--audio", required=True, help="Audio file path")
-    parser.add_argument("--checkpoint", default=None, help="Model checkpoint (.pt)")
+    parser.add_argument("--pretrained_dir", default=None,
+                        help="SpeechBrain pretrained model local directory")
+    parser.add_argument("--checkpoint", default=None, help="Custom checkpoint (.pt)")
     parser.add_argument("--device", default=None, help="Device (cuda/cpu)")
     args = parser.parse_args()
 
@@ -368,6 +444,7 @@ if __name__ == "__main__":
 
     # 编码
     encoder = ProsodyEncoder(
+        pretrained_dir=args.pretrained_dir,
         checkpoint_path=args.checkpoint,
         device=args.device,
     )
