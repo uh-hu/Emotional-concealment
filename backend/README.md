@@ -1,6 +1,6 @@
-# Prosody2Vec Backend
+# Speech2Vec Backend
 
-基于 **ECAPA-TDNN** 的韵律向量提取后端（纯 PyTorch 实现），实现 Prosody2Vec 论文的两个核心部件。
+基于 **ECAPA-TDNN** + **SpeechMapper** 的双通道向量提取后端（纯 PyTorch 实现），实现语义-韵律分析。
 
 ## 架构
 
@@ -14,57 +14,62 @@
 │   STFT(n_fft=1024, win=64ms,       │
 │        hop=16ms) → 80ch MelFilter  │
 │   输出: [B, 80, T]                  │
-└───────────────┬─────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────┐
-│   prosody_encoder.py                │
-│   ECAPA-TDNN 韵律编码器 (纯 PyTorch) │
-│   SE-Res2Block × 3 + ASP + FC      │
-│   ~14M 参数                         │
-│   输出: [B, 192]                    │
-└───────────────┬─────────────────────┘
-                │
-                ▼
-         192 维韵律向量
+└───────────┬─────────────┬───────────┘
+            │             │
+            ▼             ▼
+┌───────────────────┐ ┌───────────────────┐
+│ prosody_encoder.py│ │semantic_encoder.py│
+│ ECAPA-TDNN        │ │ SpeechMapper      │
+│ 韵律编码器        │ │ 语义编码器         │
+│ SE-Res2Block ×3   │ │ Conv1D(k=6,s=2)  │
+│ + ASP + FC        │ │ + Transformer ×6  │
+│ ~14M 参数         │ │ + FFN Projector   │
+│ 输出: [B, 192]    │ │ ~70M 参数         │
+└───────┬───────────┘ │ 输出: [B, 768]    │
+        │             └───────┬───────────┘
+        │                     │
+        ▼                     ▼
+  192 维韵律向量        768 维语义向量
 ```
 
 ## 环境准备
 
 ```bash
-# 激活 conda 环境 (需要 PyTorch + torchaudio)
 conda activate d2l
-
-# 安装额外依赖 (仅需 soundfile)
 pip install soundfile
 ```
 
-依赖清单：`torch`, `torchaudio`, `numpy`, `soundfile` — 无需 SpeechBrain。
+依赖清单：`torch`, `torchaudio`, `numpy`, `soundfile` — 无需额外框架。
 
 ## 训练模型
 
-支持单卡和 **PyTorch DDP 多卡分布式训练**。
+本项目包含两套训练代码，分别用于训练韵律编码器和语义编码器。
 
-### 单卡训练
+### 1. 训练语义编码器 (SpeechMapper) - 跨模态蒸馏
 
+你需要准备 `(语音, 文本)` 配对数据集。脚本会使用大语言模型（如 sentence-transformers）提取真实文本的高维向量，拉动语音模型的输出。
+
+**准备数据集（测试用 LibriSpeech）**:
 ```bash
-python train.py --data_dir /path/to/wav/files --epochs 100
+python download_dataset.py
+# 将自动下载 LibriSpeech dev-clean 子集 (337MB) 并生成 metadata.csv
 ```
 
-### 多卡 DDP 训练 (推荐)
+**单卡本地训练 (推荐 Windows / 单卡 8GB 显存适用)**:
+```bash
+python train_semantic.py --data_dir dataset_librispeech --batch_size 16 --epochs 50
+```
+
+### 2. 训练韵律编码器 (ECAPA-TDNN) - 自监督
+
+无需文本标注，仅用音频重建梅尔频谱图。
 
 ```bash
-# 单机 4 卡
-torchrun --nproc_per_node=4 train.py \
-    --data_dir /path/to/wav/files \
-    --batch_size 32 \
-    --epochs 100
+# 单卡
+python train.py --data_dir /path/to/wav/files --epochs 100
 
-# 多节点 (例如 2 节点 × 4 卡 = 8 卡)
-torchrun --nnodes=2 --nproc_per_node=4 \
-    --node_rank=0 \
-    --master_addr=<MASTER_IP> --master_port=29500 \
-    train.py --data_dir /path/to/wav/files --epochs 100
+# 多卡 DDP (推荐 Linux 下使用)
+torchrun --nproc_per_node=4 train.py --data_dir /path/to/wav/files
 ```
 
 ### 断点续训
@@ -87,36 +92,40 @@ torchrun --nproc_per_node=4 train.py \
 | `--segment_length` | 200 | 梅尔帧长度 (~3.2s) |
 | `--resume` | None | 断点续训 checkpoint 路径 |
 
-训练完成后会保存：
-- `checkpoints/encoder_best.pt` — 最优编码器权重（推理使用）
-- `checkpoints/encoder_final.pt` — 最终编码器权重
-- `checkpoints/checkpoint_epochN.pt` — 完整 checkpoint（含解码器、优化器，可断点续训）
-
 ## 推理
 
 ### CLI 用法
 
 ```bash
-# 使用训练好的模型
-python pipeline.py --audio ../test/audio.wav --checkpoint checkpoints/encoder_best.pt
+# 使用训练好的模型（双通道）
+python pipeline.py --audio ../test/audio.wav \
+    --prosody_checkpoint checkpoints/encoder_best.pt \
+    --semantic_checkpoint checkpoints/semantic_best.pt
 
 # 保存向量
-python pipeline.py --audio ../test/audio.wav --checkpoint checkpoints/encoder_best.pt --output prosody.npy
+python pipeline.py --audio ../test/audio.wav --output vectors.npz
 
 # JSON 输出
-python pipeline.py --audio ../test/audio.wav --checkpoint checkpoints/encoder_best.pt --json
+python pipeline.py --audio ../test/audio.wav --json
+
+# 仅语义编码器
+python semantic_encoder.py --audio ../test/audio.wav
 ```
 
 ### Python API
 
 ```python
-from pipeline import Prosody2VecPipeline
+from pipeline import Speech2VecPipeline
 
-pipeline = Prosody2VecPipeline(checkpoint_path="checkpoints/encoder_best.pt")
+pipeline = Speech2VecPipeline(
+    prosody_checkpoint="checkpoints/encoder_best.pt",
+    semantic_checkpoint="checkpoints/semantic_best.pt",
+)
 result = pipeline.process("path/to/audio.wav")
 
-prosody_vector = result["prosody_vector"]   # np.ndarray [192]
-mel = result["mel_spectrogram"]              # np.ndarray [80, T]
+prosody_vector  = result["prosody_vector"]    # np.ndarray [192]
+semantic_vector = result["semantic_vector"]   # np.ndarray [768]
+mel             = result["mel_spectrogram"]   # np.ndarray [80, T]
 ```
 
 ## 技术参数
@@ -128,18 +137,35 @@ mel = result["mel_spectrogram"]              # np.ndarray [80, T]
 | 窗口长度 | 1,024 (64ms) | STFT 窗口 |
 | 步幅 | 256 (16ms) | STFT hop |
 | 梅尔通道 | 80 | 梅尔滤波器组 |
-| 嵌入维度 | 192 | ECAPA-TDNN 输出 |
-| 编码器参数量 | ~14M | ECAPA-TDNN |
+| 韵律嵌入维度 | 192 | ECAPA-TDNN 输出 |
+| 语义嵌入维度 | 768 | SpeechMapper 输出 |
+| 韵律编码器参数量 | ~14M | ECAPA-TDNN |
+| 语义编码器参数量 | ~70M | SpeechMapper |
+
+## 语义编码器 — SpeechMapper (ICASSP 2026)
+
+基于论文 *"SpeechMapper: Speech-to-text Embedding Projector for LLMs"*
+(Mohapatra, Boito & Calapodescu, ICASSP 2026) 的核心架构。
+
+### 模型结构
+
+| 层 | 参数 | 说明 |
+|---|---|---|
+| Input Projection | Conv1D ×2, 80→1024 | 梅尔通道映射到模型维度 |
+| Conv1D 下采样 | kernel=6, stride=2 | 序列长度减半 |
+| Transformer ×6 | d=1024, heads=8, ffn=2048 | Pre-LN, GELU 激活 |
+| Attentive Pooling | attn_dim=256 | 变长→固定向量 |
+| FFN Projector | 1024→2048→768 | 投射到语义空间 |
 
 ## 文件结构
 
 ```
 backend/
 ├── mel_spectrogram.py   # 梅尔频谱图提取器
-├── prosody_encoder.py   # ECAPA-TDNN 编码器 (纯 PyTorch)
+├── prosody_encoder.py   # ECAPA-TDNN 韵律编码器
+├── semantic_encoder.py  # SpeechMapper 语义编码器 [NEW]
 ├── train.py             # 自监督训练脚本
-├── pipeline.py          # 统一管线 + CLI
+├── pipeline.py          # Speech2Vec 统一管线 + CLI
 ├── test_verify.py       # 验证测试脚本
-├── requirements.txt     # Python 依赖
 └── README.md            # 本文档
 ```

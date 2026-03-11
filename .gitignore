@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+
+# Project Specific (Models, Datasets, Cache)
+backend/dataset_librispeech/
+backend/checkpoints/
+backend/pretrained_models/
+backend/pretrained_ecapa/
+*.pt
+*.pth
+*.bin
+*.wav
+*.mp3
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

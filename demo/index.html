@@ -86,22 +86,17 @@
             <section class="panel hidden" id="resultPanel" style="display: none;">
                 <div class="result-header">
                     <h2>分析总结报告</h2>
-                    <span class="status-badge critical"><i class="fas fa-exclamation-triangle"></i> 高风险发现</span>
+                    <span class="status-badge critical" id="resultStatusBadge"><i class="fas fa-exclamation-triangle"></i> 高风险发现</span>
                 </div>
                 
                 <div class="insight-card">
-                    <p class="insight-text">
+                    <p class="insight-text" id="resultInsight">
                         系统检测到目标的 <strong>语义表达</strong> 与 <strong>韵律特征</strong> 之间存在 <span class="highlight">巨大偏移</span>。这通常表现在传递正面字面意义时，伴随了负向或紧张的声学韵律特征（如音调突变、持续颤动等）。<br>
                         <em>结论支持：极高概率存在隐瞒真实情感或认知失调的状况。</em>
                     </p>
                 </div>
 
-                <div class="data-visualization">
-                    <div class="image-wrapper">
-                        <div class="scan-line"></div>
-                        <img src="assets/result.png" alt="语义与韵律偏移可视化" class="result-image">
-                    </div>
-                </div>
+
 
                 <div class="action-footer result-footer">
                     <button class="btn btn-outline" id="resetBtn">

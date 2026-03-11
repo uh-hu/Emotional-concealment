@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ----- Analysis Process -----
     
-    submitBtn.addEventListener('click', () => {
+    submitBtn.addEventListener('click', async () => {
         if (!audioFile) return;
 
         inputPanel.classList.remove('active');
@@ -124,36 +124,81 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadingPanel.classList.add('active');
             });
             
-            startLoadingSequence();
+            // Starts real analysis via backend API
+            performRealAnalysis(audioFile);
         }, 400); 
     });
 
-    function startLoadingSequence() {
-        const steps = [
-            { text: "提取声学特征 (Prosody Extraction)...", progress: 20, time: 600 },
-            { text: "语音转文本对齐 (Speech-to-Text Alignment)...", progress: 45, time: 1400 },
-            { text: "语义深度解析 (Semantic Comprehension)...", progress: 70, time: 2200 },
-            { text: "生成模态偏移计算图谱...", progress: 90, time: 3000 },
-            { text: "完成极化特征量化评估...", progress: 100, time: 3800 }
-        ];
+    async function performRealAnalysis(file) {
+        // Mock progress updates while waiting
+        loadingText.textContent = "上传音频至后台...";
+        progressBar.style.width = '10%';
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
 
-        steps.forEach(step => {
-            setTimeout(() => {
-                loadingText.textContent = step.text;
-                progressBar.style.width = step.progress + '%';
-                
-                if (step.progress === 100) {
-                    setTimeout(showResult, 500); 
-                }
-            }, step.time);
-        });
+            // Trigger AI loading visually
+            let loadInterval = setInterval(() => {
+                let currentProg = parseInt(progressBar.style.width) || 10;
+                if(currentProg < 85) progressBar.style.width = (currentProg + 2) + '%';
+                if(currentProg > 20) loadingText.textContent = "提取声学与韵律特征 (Extracting Features)...";
+                if(currentProg > 50) loadingText.textContent = "大语言模型语义投影 (Semantic Mapping)...";
+                if(currentProg > 80) loadingText.textContent = "多模态偏移计算 (Deviation Analysis)...";
+            }, 300);
+
+            // Fetch from FastAPI
+            const response = await fetch('http://127.0.0.1:8000/analyze', {
+                method: 'POST',
+                body: formData
+            });
+
+            clearInterval(loadInterval);
+            progressBar.style.width = '100%';
+            loadingText.textContent = "分析完成！";
+
+            const data = await response.json();
+            
+            if (data.status === 'success' || data.status === 'mock_success') {
+                setTimeout(() => showResult(data), 500);
+            } else {
+                alert("后端分析错误：" + (data.message || "未知错误"));
+                resetToInput();
+            }
+        } catch (error) {
+            console.error("API Fetch Error:", error);
+            alert("请求后端失败，请确保后台 FastAPI 服务正在运行 (cd backend && uvicorn app:app --reload)");
+            resetToInput();
+        }
     }
 
     // ----- Result Presentation -----
     
-    function showResult() {
+    function showResult(data) {
         loadingPanel.classList.remove('active');
         
+        // 更新 DOM 结果
+        const statusBadge = document.getElementById('resultStatusBadge');
+        const insightText = document.getElementById('resultInsight');
+        
+        if (data.is_high_risk) {
+            statusBadge.className = "status-badge critical";
+            statusBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> 高风险发现 (分数: ' + data.deviation_score + ')';
+            insightText.innerHTML = `
+                系统通过 <strong>Speech2Vec</strong> 深度模型分析检测到目标的 <em>语义表达 (Dim: ${data.features.semantic_dim})</em> 与 <em>韵律特征 (Dim: ${data.features.prosody_dim})</em> 之间存在 <span class="highlight">显著偏移 (Deviation: ${data.deviation_score})</span>。<br>
+                这通常表现在传递表面意思时伴随了反常的声学高频抖动（如非自然的音调/语速突变）。<br>
+                <em>结论支持：极高概率存在隐瞒真实情感或认知失调的状况。</em>`;
+        } else {
+            statusBadge.className = "status-badge safe";
+            statusBadge.style.background = "var(--success-color)";
+            statusBadge.style.color = "white";
+            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> 表现自然 (分数: ' + data.deviation_score + ')';
+            insightText.innerHTML = `
+                系统综合 <em>语义编码器 (${data.features.semantic_dim}维)</em> 和 <em>韵律编码器 (${data.features.prosody_dim}维)</em> 得出结论，两者的多层激活方差偏移度较低 (<span style="color:var(--success-color); font-weight:bold;">Deviation: ${data.deviation_score}</span>)。<br>
+                目标的言语内容与潜意识声学特征保持高度一致。<br>
+                <em>结论支持：当前样本表现自然，未检测到掩饰情绪的明显迹象。</em>`;
+        }
+
         setTimeout(() => {
             loadingPanel.style.display = 'none';
             resultPanel.style.display = 'block';
@@ -166,13 +211,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 400);
     }
 
-    resetBtn.addEventListener('click', () => {
+    function resetToInput() {
+        loadingPanel.classList.remove('active');
         resultPanel.classList.remove('active');
         
         setTimeout(() => {
+            loadingPanel.style.display = 'none';
             resultPanel.style.display = 'none';
             inputPanel.style.display = 'block';
             
+            progressBar.style.width = '0%';
             removeFileBtn.click();
             submitBtn.innerHTML = '开始深度分析 <i class="fas fa-arrow-right"></i>';
             
@@ -180,5 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 inputPanel.classList.add('active');
             });
         }, 400);
-    });
+    }
+
+    resetBtn.addEventListener('click', resetToInput);
 });

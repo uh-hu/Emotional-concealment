@@ -10,10 +10,12 @@
 │   ├── script.js
 │   ├── styles.css
 │   └── assets/
-├── backend/        # Prosody2Vec 后端
+├── backend/        # Speech2Vec 后端（韵律 + 语义双通道）
 │   ├── mel_spectrogram.py   # 梅尔频谱图提取
-│   ├── prosody_encoder.py   # ECAPA-TDNN 韵律编码器
-│   ├── pipeline.py          # 统一管线
+│   ├── prosody_encoder.py   # ECAPA-TDNN 韵律编码器 → 192 维
+│   ├── semantic_encoder.py  # SpeechMapper 语义编码器 → 768 维
+│   ├── pipeline.py          # Speech2Vec 统一管线
+│   ├── train.py             # 自监督训练脚本
 │   └── README.md
 └── test/           # 测试音频文件
 ```
