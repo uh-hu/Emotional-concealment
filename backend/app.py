@@ -45,30 +45,19 @@ import math
 class CrossModalAligner(nn.Module):
     """跨模态对齐计算器
     
-    将不同维度的韵律特征和语义特征投影到共享的 1024 维空间，
-    通过余弦夹角公式计算偏差 (Cosine Distance = 1 - Cosine Similarity)。
-    
-    注：此处目前使用初始化的投影权重作为临时特征映射。
-    在实际生产中，应通过对比学习(Contrastive Learning)在这个对齐器上进行微调。
+    直接将 192 维的语义特征与 192 维韵律特征对齐，并计算余弦夹角偏差。
     """
     def __init__(self):
         super().__init__()
-        # 固定随机数种子，保证未微调前每次启动时投影逻辑确定
-        torch.manual_seed(2026)
-        self.proj_prosody = nn.Linear(192, 1024, bias=True)
-        self.proj_semantic = nn.Linear(768, 1024, bias=True)
         
     @torch.no_grad()
     def forward(self, prosody_vec: np.ndarray, semantic_vec: np.ndarray) -> float:
+        # 两者现在在架构层面都已经原生输出 192 维
         p_tensor = torch.from_numpy(prosody_vec).float().view(1, -1)
         s_tensor = torch.from_numpy(semantic_vec).float().view(1, -1)
         
-        # 1. 映射到共享的 1024 维空间
-        p_1024 = self.proj_prosody(p_tensor)
-        s_1024 = self.proj_semantic(s_tensor)
-        
-        # 2. 计算纯数学上的余弦相似度
-        cos_sim = F.cosine_similarity(p_1024, s_1024, dim=-1).item()
+        # 直接计算原生 192 维空间的余弦相似度
+        cos_sim = F.cosine_similarity(p_tensor, s_tensor, dim=-1).item()
         
         # 3. [差值放大机制] 解决高维正交衰减
         # 问题：在 1024 维空间中，未训练的随机投影会使得任何输入的余弦相似度都极其趋近于 0（即默认正交）。
@@ -131,7 +120,7 @@ async def analyze_audio(file: UploadFile = File(...)):
                 "features": {
                     "prosody_dim": len(p_vec),
                     "semantic_dim": len(s_vec),
-                    "aligned_dim": 1024,
+                    "aligned_dim": 192,
                     "prosody_sample": p_vec[:5].tolist(),  
                     "semantic_sample": s_vec[:5].tolist()
                 }
@@ -149,7 +138,7 @@ async def analyze_audio(file: UploadFile = File(...)):
                 "features": {
                     "prosody_dim": 192,
                     "semantic_dim": 768,
-                    "aligned_dim": 1024,
+                    "aligned_dim": 192,
                     "prosody_sample": [0.1, 0.2, 0.3, 0.4, 0.5],
                     "semantic_sample": [0.01, -0.02, 0.05, 0.0, 0.1]
                 }

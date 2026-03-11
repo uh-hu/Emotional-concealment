@@ -45,7 +45,7 @@ class Speech2VecPipeline:
         pretrained_dir: str = None,
         prosody_checkpoint: str = None,
         semantic_checkpoint: str = None,
-        semantic_dim: int = 768,
+        semantic_dim: int = 192,
         device: str = None,
     ):
         if device is None:
@@ -153,7 +153,7 @@ def main():
                         help="Prosody encoder checkpoint (.pt)")
     parser.add_argument("--semantic_checkpoint", default=None,
                         help="Semantic encoder checkpoint (.pt)")
-    parser.add_argument("--semantic_dim", type=int, default=768,
+    parser.add_argument("--semantic_dim", type=int, default=192,
                         help="Semantic vector dimension (default: 768)")
     parser.add_argument("--device", default=None, help="Device (cuda/cpu)")
     parser.add_argument("--output", default=None,

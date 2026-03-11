@@ -260,7 +260,7 @@ class SpeechMapper(nn.Module):
         n_transformer_layers: int = 6,
         nhead: int = 8,
         dim_feedforward: int = 2048,
-        semantic_dim: int = 768,
+        semantic_dim: int = 192,
         ffn_hidden: int = 2048,
         dropout: float = 0.1,
     ):
@@ -369,7 +369,7 @@ class SemanticEncoder:
         self,
         checkpoint_path: str = None,
         device: str = None,
-        semantic_dim: int = 768,
+        semantic_dim: int = 192,
         d_model: int = 1024,
         n_blocks: int = 1,
         n_transformer_layers: int = 6,

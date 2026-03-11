@@ -6,11 +6,11 @@ Semantic Encoder Training Script — Cross-modal Alignment Distillation
 
 训练目标: 监督学习 / 跨模态知识蒸馏
 利用预训练的大语言文本嵌入模型（如 sentence-transformers）作为教师网络，
-引导 SpeechMapper（学生网络）将梅尔频谱图投射到相同的 768 维文本语义空间中。
+引导 SpeechMapper（学生网络）将梅尔频谱图投射到相同的 192 维文本语义空间中。
 
 架构:
-    输入文本 [Text] → SentenceTransformer (Teacher) → Target 嵌入 [768]
-    输入音频 [Wav] → SpeechMapper (Student) → Pred 嵌入 [768]
+    输入文本 [Text] → SentenceTransformer (Teacher) → Target 嵌入 [192]
+    输入音频 [Wav] → SpeechMapper (Student) → Pred 嵌入 [192]
      Loss = MSE(Pred, Target) + 1 - CosineSimilarity(Pred, Target)
 
 本地单卡（Windows）运行优化:
@@ -205,8 +205,12 @@ class SemanticTrainer:
         # ─── 1. 初始化模型 ───
         print("\n[Init] Building models...")
         self.teacher = TextEmbeddingTeacher(device=self.device)
-        # 指定输出 768 维与 mpnet-base-v2 的输出对齐
-        self.student = SpeechMapper(semantic_dim=768).to(self.device)
+        # 指定输出 192 维，与原生的韵律特征对齐
+        self.student = SpeechMapper(semantic_dim=192).to(self.device)
+        
+        # 因为 teacher 输出的是 768 维，而 student 现在输出 192 维
+        # 我们需要一个可训练的线性层，将 teacher 的 768 维降维到 192 维教给 student
+        self.teacher_proj = nn.Linear(768, 192).to(self.device)
         
         # ─── 2. 准备数据集 ───
         print("\n[Init] Preparing dataset...")
@@ -222,7 +226,11 @@ class SemanticTrainer:
         )
         
         # ─── 3. 优化器与损失 ───
-        self.optimizer = torch.optim.AdamW(self.student.parameters(), lr=lr, weight_decay=1e-2)
+        # 优化器同时优化 student 和 teacher_proj
+        self.optimizer = torch.optim.AdamW(
+            list(self.student.parameters()) + list(self.teacher_proj.parameters()), 
+            lr=lr, weight_decay=1e-2
+        )
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs)
         
         self.mse_loss = nn.MSELoss()
@@ -247,12 +255,15 @@ class SemanticTrainer:
                     continue
                 
                 # --- 前向传播教师（文本） ---
-                # target 是来自 LLM 嵌入空间的真实锚点
+                # target 是来自 LLM 嵌入空间的真实锚点 (768维)
                 with torch.no_grad():
-                    target_embs = self.teacher.get_embeddings(texts)  # [B, 768]
+                    target_embs_768 = self.teacher.get_embeddings(texts)  # [B, 768]
+                
+                # [新增] 将教师的 768 维降维到 192 维，让它能和学生的输出对齐计算 loss
+                target_embs = self.teacher_proj(target_embs_768)          # [B, 192]
                 
                 # --- 前向传播学生（音频） ---
-                pred_embs = self.student(mels)  # [B, 768]
+                pred_embs = self.student(mels)  # [B, 192]
                 
                 # 为了计算余弦损失，所有标签都为 1（表示让它们尽量相似）
                 targets_for_cosine = torch.ones(mels.size(0)).to(self.device)
