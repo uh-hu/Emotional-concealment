@@ -8,6 +8,7 @@
     --primary-hover: #2563eb;
     --primary-glow: rgba(59, 130, 246, 0.5);
     --danger: #ef4444;
+    --success-color: #22c55e;
     --danger-bg: rgba(239, 68, 68, 0.1);
     --danger-border: rgba(239, 68, 68, 0.3);
     --accent: #8b5cf6;
@@ -612,4 +613,152 @@ body {
     10% { opacity: 1; }
     90% { opacity: 1; }
     100% { top: 100%; opacity: 0; }
+}
+
+/* Visualization */
+.viz-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 860px) {
+    .viz-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.viz-card {
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+    padding: 1.25rem;
+}
+
+.viz-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+.viz-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.angle-gauge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    padding: 0.75rem;
+}
+
+.angle-svg {
+    width: 100%;
+    max-width: 420px;
+    height: auto;
+}
+
+.angle-text {
+    fill: rgba(255, 255, 255, 0.92);
+    font-size: 14px;
+    font-weight: 800;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.angle-text-muted {
+    fill: rgba(255, 255, 255, 0.65);
+    font-size: 12px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.metric-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
+.metric-chip {
+    padding: 0.35rem 0.6rem;
+    border-radius: 9999px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.metric-chip.danger {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
+.heatmap-wrap {
+    display: flex;
+    flex-direction: column;
+}
+
+.heatmap {
+    display: grid;
+    grid-template-columns: repeat(32, 1fr);
+    gap: 3px;
+    padding: 0.75rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.heat-cell {
+    height: 10px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    outline: 1px solid rgba(0, 0, 0, 0.25);
+    cursor: default;
+    transition: transform 0.08s ease, outline-color 0.12s ease;
+}
+
+.heat-cell:hover {
+    transform: scale(1.18);
+    outline-color: rgba(255, 255, 255, 0.35);
+}
+
+.heatmap-inspector {
+    margin-top: 0.6rem;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.topk {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.topk .chip {
+    padding: 0.35rem 0.55rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.topk .chip strong {
+    color: #f59e0b;
 }

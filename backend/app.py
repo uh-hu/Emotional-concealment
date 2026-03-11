@@ -107,6 +107,21 @@ async def analyze_audio(file: UploadFile = File(...)):
             # 【跨模态偏移量化计算】
             # 使用对齐器计算 1024 维下的夹角余弦偏差
             deviation = aligner(p_vec, s_vec)
+
+            # 额外对齐指标（用于前端可视化）
+            p_np = np.asarray(p_vec, dtype=np.float32)
+            s_np = np.asarray(s_vec, dtype=np.float32)
+            metric_dim = int(min(p_np.shape[0], s_np.shape[0]))
+            p_m = p_np[:metric_dim]
+            s_m = s_np[:metric_dim]
+            denom = float(np.linalg.norm(p_m) * np.linalg.norm(s_m) + 1e-12)
+            cos_sim = float(np.dot(p_m, s_m) / denom)
+            cos_sim_clamped = max(-1.0, min(1.0, cos_sim))
+            angle_deg = float(math.degrees(math.acos(cos_sim_clamped)))
+
+            temperature = 40.0
+            amplified_sim = float(cos_sim * temperature)
+            consistency = float(1.0 / (1.0 + math.exp(-amplified_sim)))
             
             # 直接应用 0.5 偏差判定阈值
             is_high_risk = deviation > 0.5
@@ -117,30 +132,56 @@ async def analyze_audio(file: UploadFile = File(...)):
                 "process_time": round(time.time() - start_time, 2),
                 "deviation_score": round(deviation, 3), # 0~2 的实数
                 "is_high_risk": is_high_risk,
+                "alignment": {
+                    "cosine_similarity": cos_sim,
+                    "angle_degrees": angle_deg,
+                    "temperature": temperature,
+                    "amplified_similarity": amplified_sim,
+                    "consistency": consistency,
+                    "metrics_dim": metric_dim,
+                },
                 "features": {
                     "prosody_dim": len(p_vec),
                     "semantic_dim": len(s_vec),
                     "aligned_dim": 192,
                     "prosody_sample": p_vec[:5].tolist(),  
-                    "semantic_sample": s_vec[:5].tolist()
+                    "semantic_sample": s_vec[:5].tolist(),
+                    "prosody_vector": p_vec.tolist(),
+                    "semantic_vector": s_vec.tolist(),
                 }
             }
         else:
             # Mock 模式
             time.sleep(2)
             mock_dev = float(np.random.uniform(0.1, 0.9))
+            mock_cos = float(np.random.uniform(-0.2, 0.8))
+            mock_cos_clamped = max(-1.0, min(1.0, mock_cos))
+            mock_angle = float(math.degrees(math.acos(mock_cos_clamped)))
+            mock_temperature = 40.0
+            mock_amplified = float(mock_cos * mock_temperature)
+            mock_consistency = float(1.0 / (1.0 + math.exp(-mock_amplified)))
             response = {
                 "status": "mock_success",
                 "filename": file.filename,
                 "process_time": round(time.time() - start_time, 2),
                 "deviation_score": round(mock_dev, 3),
                 "is_high_risk": mock_dev > 0.5,
+                "alignment": {
+                    "cosine_similarity": mock_cos,
+                    "angle_degrees": mock_angle,
+                    "temperature": mock_temperature,
+                    "amplified_similarity": mock_amplified,
+                    "consistency": mock_consistency,
+                    "metrics_dim": 192,
+                },
                 "features": {
                     "prosody_dim": 192,
                     "semantic_dim": 768,
                     "aligned_dim": 192,
                     "prosody_sample": [0.1, 0.2, 0.3, 0.4, 0.5],
-                    "semantic_sample": [0.01, -0.02, 0.05, 0.0, 0.1]
+                    "semantic_sample": [0.01, -0.02, 0.05, 0.0, 0.1],
+                    "prosody_vector": [float(np.random.uniform(-1, 1)) for _ in range(192)],
+                    "semantic_vector": [float(np.random.uniform(-1, 1)) for _ in range(192)],
                 }
             }
             

@@ -18,6 +18,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progressBar');
     const resetBtn = document.getElementById('resetBtn');
 
+    // Visualization
+    const vizLayout = document.getElementById('vizLayout');
+    const vecLineB = document.getElementById('vecLineB');
+    const angleText = document.getElementById('angleText');
+    const cosText = document.getElementById('cosText');
+    const consistencyText = document.getElementById('consistencyText');
+    const alignmentMetrics = document.getElementById('alignmentMetrics');
+    const diffHeatmap = document.getElementById('diffHeatmap');
+    const heatmapInspector = document.getElementById('heatmapInspector');
+    const topkList = document.getElementById('topkList');
     // State
     let isRecording = false;
     let audioFile = null;
@@ -199,6 +209,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <em>结论支持：当前样本表现自然，未检测到掩饰情绪的明显迹象。</em>`;
         }
 
+        renderVisualizations(data);
+
         setTimeout(() => {
             loadingPanel.style.display = 'none';
             resultPanel.style.display = 'block';
@@ -209,6 +221,153 @@ document.addEventListener('DOMContentLoaded', () => {
                 resultPanel.classList.add('active');
             });
         }, 400);
+    }
+    // ----- Visualization -----
+
+    function clampNumber(value, min, max) {
+        if (typeof value !== 'number' || Number.isNaN(value)) return min;
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function formatNumber(value, digits = 3) {
+        if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+        return value.toFixed(digits);
+    }
+
+    function computeCosine(a, b, n) {
+        let dot = 0;
+        let na = 0;
+        let nb = 0;
+        for (let i = 0; i < n; i++) {
+            const av = Number(a[i]);
+            const bv = Number(b[i]);
+            if (!Number.isFinite(av) || !Number.isFinite(bv)) continue;
+            dot += av * bv;
+            na += av * av;
+            nb += bv * bv;
+        }
+        const denom = Math.sqrt(na) * Math.sqrt(nb) + 1e-12;
+        return dot / denom;
+    }
+
+    function clearVisualizations() {
+        if (alignmentMetrics) alignmentMetrics.innerHTML = '';
+        if (diffHeatmap) diffHeatmap.innerHTML = '';
+        if (topkList) topkList.innerHTML = '';
+        if (heatmapInspector) heatmapInspector.textContent = '将鼠标悬停在格子上查看数值';
+        if (angleText) angleText.textContent = 'Angle: --';
+        if (cosText) cosText.textContent = 'cos: --';
+        if (consistencyText) consistencyText.textContent = 'consistency: --';
+        if (vecLineB) vecLineB.setAttribute('transform', 'rotate(90 80 70)');
+    }
+
+    function renderAngleGauge({ deviation, cosineSimilarity, angleDegrees, consistency, dims }) {
+        if (vecLineB) vecLineB.setAttribute('transform', `rotate(${angleDegrees} 80 70)`);
+        if (angleText) angleText.textContent = `Angle: ${formatNumber(angleDegrees, 1)}°`;
+        if (cosText) cosText.textContent = `cos: ${formatNumber(cosineSimilarity, 3)}`;
+        if (consistencyText) consistencyText.textContent = `consistency: ${formatNumber(consistency, 3)}`;
+
+        if (!alignmentMetrics) return;
+        const chips = [
+            { label: 'deviation', value: formatNumber(deviation, 3), danger: deviation > 0.5 },
+            { label: 'angle', value: `${formatNumber(angleDegrees, 1)}deg` },
+            { label: 'cos', value: formatNumber(cosineSimilarity, 3) },
+            { label: 'dims', value: String(dims) },
+        ];
+
+        alignmentMetrics.innerHTML = chips
+            .map((c) => `<span class="metric-chip${c.danger ? ' danger' : ''}">${c.label}: ${c.value}</span>`)
+            .join('');
+    }
+
+    function renderDiffHeatmap(pVec, sVec, n) {
+        if (!diffHeatmap) return;
+        diffHeatmap.innerHTML = '';
+
+        const diffs = new Array(n);
+        for (let i = 0; i < n; i++) {
+            const pv = Number(pVec[i]);
+            const sv = Number(sVec[i]);
+            diffs[i] = Number.isFinite(pv) && Number.isFinite(sv) ? Math.abs(pv - sv) : 0;
+        }
+
+        const sorted = diffs.slice().sort((a, b) => a - b);
+        const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? sorted[sorted.length - 1] ?? 1;
+        const scale = p95 > 0 ? p95 : (sorted[sorted.length - 1] || 1);
+
+        const top = diffs
+            .map((d, idx) => ({ idx, d }))
+            .sort((a, b) => b.d - a.d)
+            .slice(0, 10);
+
+        for (let i = 0; i < n; i++) {
+            const intensity = Math.min(1, diffs[i] / (scale + 1e-12));
+            const hue = 210 - 210 * intensity; // blue -> red
+            const alpha = 0.12 + 0.88 * intensity;
+
+            const cell = document.createElement('div');
+            cell.className = 'heat-cell';
+            cell.style.backgroundColor = `hsla(${hue}, 90%, 55%, ${alpha})`;
+            cell.title = `#${i + 1} | p=${formatNumber(Number(pVec[i]), 3)} s=${formatNumber(Number(sVec[i]), 3)} | diff=${formatNumber(diffs[i], 3)}`;
+            cell.addEventListener('mouseenter', () => {
+                if (!heatmapInspector) return;
+                heatmapInspector.textContent = `dim #${i + 1}: p=${formatNumber(Number(pVec[i]), 3)}  s=${formatNumber(Number(sVec[i]), 3)}  |diff|=${formatNumber(diffs[i], 3)}`;
+            });
+            diffHeatmap.appendChild(cell);
+        }
+
+        if (topkList) {
+            topkList.innerHTML = top
+                .map((t) => `<span class="chip"><strong>#${t.idx + 1}</strong> diff=${formatNumber(t.d, 3)}</span>`)
+                .join('');
+        }
+    }
+
+    function renderVisualizations(data) {
+        if (!vizLayout) return;
+
+        const features = data && data.features ? data.features : null;
+        const pVec = features && Array.isArray(features.prosody_vector) ? features.prosody_vector : null;
+        const sVec = features && Array.isArray(features.semantic_vector) ? features.semantic_vector : null;
+
+        if (!pVec || !sVec || pVec.length === 0 || sVec.length === 0) {
+            clearVisualizations();
+            vizLayout.style.display = 'none';
+            return;
+        }
+
+        vizLayout.style.display = '';
+
+        const n = Math.min(pVec.length, sVec.length);
+        let cos = data && data.alignment && typeof data.alignment.cosine_similarity === 'number'
+            ? data.alignment.cosine_similarity
+            : computeCosine(pVec, sVec, n);
+
+        cos = clampNumber(cos, -1, 1);
+
+        let angle = data && data.alignment && typeof data.alignment.angle_degrees === 'number'
+            ? data.alignment.angle_degrees
+            : (Math.acos(cos) * 180) / Math.PI;
+
+        angle = clampNumber(angle, 0, 180);
+
+        let consistency = data && data.alignment && typeof data.alignment.consistency === 'number'
+            ? data.alignment.consistency
+            : (1.0 / (1.0 + Math.exp(-(cos * 40.0))));
+
+        consistency = clampNumber(consistency, 0, 1);
+
+        const deviation = typeof data.deviation_score === 'number' ? data.deviation_score : Number(data.deviation_score);
+
+        renderAngleGauge({
+            deviation: Number.isFinite(deviation) ? deviation : 0,
+            cosineSimilarity: cos,
+            angleDegrees: angle,
+            consistency,
+            dims: n,
+        });
+
+        renderDiffHeatmap(pVec, sVec, n);
     }
 
     function resetToInput() {
