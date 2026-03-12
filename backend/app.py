@@ -59,21 +59,7 @@ class CrossModalAligner(nn.Module):
         # 直接计算原生 192 维空间的余弦相似度
         cos_sim = F.cosine_similarity(p_tensor, s_tensor, dim=-1).item()
         
-        # 3. [差值放大机制] 解决高维正交衰减
-        # 问题：在 1024 维空间中，未训练的随机投影会使得任何输入的余弦相似度都极其趋近于 0（即默认正交）。
-        # 这导致所有音频算出来的理论偏差都在 1.0 附近徘徊，区分度可能只有 0.01 左右。
-        # 方案：利用“温度缩放 (Temperature Scaling) + Sigmoid”将这微小的夹角偏差作指数级放大！
-        
-        temperature = 40.0  # 敏感度系数：越大，微小的输入差异就会被放大得越极端
-        amplified_sim = cos_sim * temperature 
-        
-        # 将被放大的相似度通过 Sigmoid 压缩成 0 ~ 1.0 的平滑概率分布（一致性）
-        consistency = 1.0 / (1.0 + math.exp(-amplified_sim))
-        
-        # 偏差度 = 1 - 一致性（0.5为中位线，<0.5表现自然，>0.5表现异常）
-        deviation = 1.0 - consistency
-        
-        return deviation
+        return cos_sim
 
 
 # 初始化对齐器
@@ -105,8 +91,8 @@ async def analyze_audio(file: UploadFile = File(...)):
             s_vec = result["semantic_vector"]
             
             # 【跨模态偏移量化计算】
-            # 使用对齐器计算 1024 维下的夹角余弦偏差
-            deviation = aligner(p_vec, s_vec)
+            # 使用对齐器计算 192 维下的夹角余弦相似度
+            similarity = aligner(p_vec, s_vec)
 
             # 额外对齐指标（用于前端可视化）
             p_np = np.asarray(p_vec, dtype=np.float32)
@@ -115,29 +101,22 @@ async def analyze_audio(file: UploadFile = File(...)):
             p_m = p_np[:metric_dim]
             s_m = s_np[:metric_dim]
             denom = float(np.linalg.norm(p_m) * np.linalg.norm(s_m) + 1e-12)
-            cos_sim = float(np.dot(p_m, s_m) / denom)
-            cos_sim_clamped = max(-1.0, min(1.0, cos_sim))
+            cos_sim_metric = float(np.dot(p_m, s_m) / denom)
+            cos_sim_clamped = max(-1.0, min(1.0, cos_sim_metric))
             angle_deg = float(math.degrees(math.acos(cos_sim_clamped)))
 
-            temperature = 40.0
-            amplified_sim = float(cos_sim * temperature)
-            consistency = float(1.0 / (1.0 + math.exp(-amplified_sim)))
-            
-            # 直接应用 0.5 偏差判定阈值
-            is_high_risk = deviation > 0.5
+            # 余弦相似度区间 [-1, 1], <0.5 时可认为相似度偏低，高偏差风险
+            is_high_risk = similarity < 0.5
             
             response = {
                 "status": "success",
                 "filename": file.filename,
                 "process_time": round(time.time() - start_time, 2),
-                "deviation_score": round(deviation, 3), # 0~2 的实数
+                "deviation_score": round(similarity, 3), # 传递余弦相似度
                 "is_high_risk": is_high_risk,
                 "alignment": {
-                    "cosine_similarity": cos_sim,
+                    "cosine_similarity": cos_sim_metric,
                     "angle_degrees": angle_deg,
-                    "temperature": temperature,
-                    "amplified_similarity": amplified_sim,
-                    "consistency": consistency,
                     "metrics_dim": metric_dim,
                 },
                 "features": {
@@ -153,25 +132,18 @@ async def analyze_audio(file: UploadFile = File(...)):
         else:
             # Mock 模式
             time.sleep(2)
-            mock_dev = float(np.random.uniform(0.1, 0.9))
-            mock_cos = float(np.random.uniform(-0.2, 0.8))
-            mock_cos_clamped = max(-1.0, min(1.0, mock_cos))
+            mock_similarity = float(np.random.uniform(-0.2, 0.8))
+            mock_cos_clamped = max(-1.0, min(1.0, mock_similarity))
             mock_angle = float(math.degrees(math.acos(mock_cos_clamped)))
-            mock_temperature = 40.0
-            mock_amplified = float(mock_cos * mock_temperature)
-            mock_consistency = float(1.0 / (1.0 + math.exp(-mock_amplified)))
             response = {
                 "status": "mock_success",
                 "filename": file.filename,
                 "process_time": round(time.time() - start_time, 2),
-                "deviation_score": round(mock_dev, 3),
-                "is_high_risk": mock_dev > 0.5,
+                "deviation_score": round(mock_similarity, 3),
+                "is_high_risk": mock_similarity < 0.5,
                 "alignment": {
-                    "cosine_similarity": mock_cos,
+                    "cosine_similarity": mock_similarity,
                     "angle_degrees": mock_angle,
-                    "temperature": mock_temperature,
-                    "amplified_similarity": mock_amplified,
-                    "consistency": mock_consistency,
                     "metrics_dim": 192,
                 },
                 "features": {
